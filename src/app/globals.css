@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+.picklist_page_table table th{
+    background-color: #113d5a !important;
+}
+
+.picklist_page_table .tdgpn-column {
+    width: 130px !important;
+    min-width: 130px !important;
+}
