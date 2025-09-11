@@ -47,22 +47,33 @@ const BoxContainer = ({ data }: { data: string[] }) => {
 
   return (
     <div className="flex flex-col gap-2 w-full">
-      <div className="flex w-full ">
+      <div className="flex flex-col sm:flex-row w-full">
         {[box1fld, box2fld, box3fld, box4fld, box5fld].map(
           (boxFields, boxIndex) => (
             <div
               key={boxIndex}
-              className={`w-1/5 border border-[#000] ${boxBgColors[boxIndex]}`}
+              className={`
+                w-full 
+                sm:w-1/5 
+                border border-[#000] 
+                ${boxBgColors[boxIndex]}
+                mb-2 sm:mb-0
+              `}
             >
               {boxFields.map((field, index) => (
                 <div
                   key={index}
-                  className={`flex justify-between items-start border-b border-b-[#8f9295] p-3 last:border-b-0`}
+                  className={`
+                    flex flex-col sm:flex-row 
+                    justify-between items-start 
+                    border-b border-b-[#8f9295] 
+                    p-3 last:border-b-0
+                  `}
                 >
-                  <div className="font-semibold text-left w-1/2 pr-2 text-sm">
+                  <div className="font-semibold text-left w-full sm:w-1/2 pr-2 text-sm mb-1 sm:mb-0">
                     <span className="font-semibold">{field.label}</span>
                   </div>
-                  <div className="text-left w-1/2 break-words text-sm">
+                  <div className="text-left w-full sm:w-1/2 break-words text-sm">
                     {(() => {
                       const displayValue = getDisplayValue(field.key, data);
                       // Additional safety check to ensure we never render objects

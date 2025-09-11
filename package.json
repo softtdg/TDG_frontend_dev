@@ -10,6 +10,9 @@
     "production": "NODE_ENV=production npm run build && pm2 start npm --name TDG_frontend -- start"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.3.2",
     "@reduxjs/toolkit": "^2.8.2",
     "@tanstack/react-query": "^5.83.0",
     "@types/js-cookie": "^3.0.6",

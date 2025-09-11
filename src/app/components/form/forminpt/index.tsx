@@ -43,14 +43,21 @@ const FormInput: React.FC<FormInputProps> = ({
   className,
 }): JSX.Element => {
   return (
-    <div className={` ${className || ""}`}>
+    <div
+      className={`w-full ${
+        className || ""
+      } flex flex-col sm:flex-row sm:items-center gap-2`}
+    >
       {label && (
-        <label htmlFor={id} className={`${labelCls}`}>
+        <label
+          htmlFor={id}
+          className={`${labelCls} mb-1 sm:mb-0 sm:mr-1  whitespace-nowrap`}
+        >
           {label}
         </label>
       )}
       <input
-        className={`border outline-none border-[#aaaaaa] rounded px-3 py-1.5 w-96 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputTable}`}
+        className={`border outline-none border-[#aaaaaa] rounded px-3 py-1.5 w-full max-w-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputTable}`}
         type={type}
         id={id}
         name={name}

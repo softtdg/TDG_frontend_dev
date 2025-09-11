@@ -75,16 +75,29 @@ const DashboardComponent = () => {
         </div>
       </div>
 
+      {/* Menu Options */}
+      <div className="p-4">
+        <div className="flex justify-start">
+          <button
+            onClick={() => router.push("/inventory-search")}
+            className="text-[darkblue] border-b border-[darkblue] font-medium cursor-pointer backdrop-blur-sm bg-transparent shadow-none hover:bg-transparent transition-colors duration-200"
+          >
+            Inventory Search
+          </button>
+        </div>
+      </div>
+
       <div className="p-2 pt-5.5 flex justify-center items-center">
-        <div className="flex items-center gap-4">
-          <div className="">
+        <div className="flex flex-col sm:flex-row items-center gap-4 w-full max-w-lg">
+          <div className="w-full">
             <FormInput
               type="text"
               label="SOP Number"
-              labelCls="pr-5"
+              labelCls="pr-0 sm:pr-5"
               value={sopNumber}
               onChange={handleSopNumberChange}
               onKeyDown={handleKeyDown}
+              className="w-full"
             />
           </div>
         </div>
@@ -111,7 +124,7 @@ const DashboardComponent = () => {
           </div>
         ) : data && data.length !== 0 ? (
           <>
-            <div className="pt-20">
+            <div className="pt-10 max-sm:px-[10px]">
               <BoxContainer data={data} />
             </div>
             <div>
