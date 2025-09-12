@@ -19,6 +19,7 @@ import Table from "../table";
 import FormInput from "../../form/forminpt";
 import { BarLoader, BeatLoader } from "react-spinners";
 import { FiDownload } from "react-icons/fi";
+import { toastUtils } from "@/app/utils/toastUtils";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import FormControl from "@mui/material/FormControl";
@@ -46,7 +47,6 @@ const PickList = () => {
   const [pickList, setPickList] = useState<any>();
   const [selectedsopId, setSelectedSopId] = useState<string>("");
   const [pickListResponse, setPickListResponse] = useState<any>(null);
-  console.log("pickListResponse", pickListResponse);
   const [tblLoading, setTblLoading] = useState(false);
   const [inventory, setInventory] = useState(false);
   const [production, setProduction] = useState(false);
@@ -57,6 +57,20 @@ const PickList = () => {
   const [mpfEnabled, setMpfEnabled] = useState(false);
   const [mpfRequestedBy, setMpfRequestedBy] = useState<string>("");
   const [mpfRequestedByError, setMpfRequestedByError] = useState<string>("");
+  const [commentOtherStates, setCommentOtherStates] = useState<{
+    [key: number]: boolean;
+  }>({});
+  const [validationErrors, setValidationErrors] = useState<{
+    actualQty: boolean;
+    mpfQty: boolean;
+    comments: boolean;
+    mpfRequestedBy: boolean;
+  }>({
+    actualQty: false,
+    mpfQty: false,
+    comments: false,
+    mpfRequestedBy: false,
+  });
 
   // const [productionDateOut, setProductionDateOut] = useState<string>("");
 
@@ -87,16 +101,34 @@ const PickList = () => {
     (state) => state.fileDownload
   );
 
+  // Function to refetch picklist data (reuses handleChnage logic to avoid duplication)
+  const refetchPickListData = async () => {
+    if (!selectedsopId) return;
+
+    // Reuse the existing handleChnage function to avoid duplicate API calls
+    await handleChnage(selectedsopId);
+  };
+
   // Handle Redux download state changes
   useEffect(() => {
     if (success && filename) {
+      // Refetch picklist data after successful download
+      refetchPickListData();
       dispatch(resetDownloadState());
     }
 
     if (error) {
       dispatch(resetDownloadState());
     }
-  }, [success, error, filename, dispatch]);
+  }, [
+    success,
+    error,
+    filename,
+    dispatch,
+    selectedsopId,
+    fixtureNumber,
+    fixtureData,
+  ]);
 
   const GetFixtureData = async (fixtureNum: string) => {
     try {
@@ -138,6 +170,9 @@ const PickList = () => {
           (item: any) => ({
             ...item,
             isGrayRow: item.isGray,
+            mpfQty: item.mpfQty || "", // Initialize MPF quantity
+            userModifiedActualQty: false, // Track if user has modified this field
+            userModifiedComments: false, // Track if user has modified comments field
           })
         );
         setPickList(listData);
@@ -156,6 +191,9 @@ const PickList = () => {
             (item: any) => ({
               ...item,
               isGrayRow: item.isGray,
+              mpfQty: item.mpfQty || "", // Initialize MPF quantity
+              userModifiedActualQty: false, // Track if user has modified this field
+              userModifiedComments: false, // Track if user has modified comments field
             })
           );
           // setPickList(response.data.data.listData || [])
@@ -282,23 +320,48 @@ const PickList = () => {
     { label: "PCS", value: "PCS" },
   ];
 
+  const commentOptions = [
+    { label: "Good", value: "Good" },
+    { label: "Damaged", value: "Damaged" },
+    { label: "Missing", value: "Missing" },
+    { label: "Other", value: "Other" },
+  ];
+
   function getFileNameFromHeader(disposition: any) {
     if (!disposition) return null;
     const match = disposition.match(/filename="(.+)"/);
     return match ? match[1] : null;
   }
 
-  // Helper function to collect all comments from picklist
+  // Helper function to collect all comments from picklist (including default comments)
   const getInventoryComments = () => {
     if (!pickList || pickList.length === 0) return "";
+    console.log("pickList", pickList);
 
     const comments = pickList
-      .filter(
-        (item: any) =>
-          !item.isGrayRow && item.Comments && item.Comments.trim() !== ""
-      )
-      .map((item: any) => `${item.TDGPN}: ${item.Comments}`)
-      .join("; ");
+      .filter((item: any) => !item.isGrayRow)
+      .map((item: any) => {
+        // Get user comments if they exist
+        const userComments =
+          item.InventoryComments && item.InventoryComments.trim() !== ""
+            ? item.InventoryComments
+            : "";
+
+        // Get default comments
+        const defaultComments: any = getDefaultComments(item.TDGPN);
+
+        // Combine user and default comments
+        let combinedComments = "";
+        if (userComments) {
+          combinedComments = userComments;
+        } else {
+          combinedComments = defaultComments;
+        }
+
+        // Only include if there are any comments
+        return combinedComments;
+      })
+      .filter((comment: string | null) => comment !== null);
 
     return comments;
   };
@@ -314,12 +377,11 @@ const PickList = () => {
         }
       }
 
-      const inventoryComments = getInventoryComments();
       const response = await DownloadUpdatedData(
         payload,
         mpfEnabled ? 1 : 0,
         mpfRequestedBy,
-        inventoryComments
+        "" // Empty string since comments are now in sheetData
       );
 
       const disposition = response.headers["content-disposition"];
@@ -338,13 +400,63 @@ const PickList = () => {
 
       // Optional: release memory
       window.URL.revokeObjectURL(url);
-    } catch (error) {}
+
+      // Turn off MPF after successful download
+      setMpfEnabled(false);
+      setMpfRequestedBy("");
+      setMpfRequestedByError("");
+
+      // Refetch picklist data after successful download
+      await refetchPickListData();
+    } catch (error) {
+      console.error("Error downloading updated data:", error);
+    }
   };
 
   const handleProductionListSubmit = async () => {
     const filteredData = pickList?.filter((item: any) => item.isGray === true);
     try {
       if (filteredData.length > 0) {
+        // Ensure default quantities and comments are included in the data sent to API
+        const processedSheetData = filteredData.map((item: any) => {
+          let processedItem = { ...item };
+
+          // Handle quantity logic: if mpfQty has value, clear ActualQtyPicked
+          if (item.mpfQty && item.mpfQty.trim() !== "" && item.mpfQty !== "0") {
+            // If MPF quantity exists, clear ActualQtyPicked
+            processedItem.ActualQtyPicked = "";
+          } else {
+            // If no MPF quantity, handle ActualQtyPicked normally
+            if (!item.userModifiedActualQty) {
+              const defaultQty = getDefaultQtyToPick(item.TDGPN);
+              processedItem.ActualQtyPicked =
+                defaultQty || item.ActualQtyPicked || "";
+            }
+          }
+
+          // Get user comments if they exist
+          const userComments =
+            item.InventoryComments && item.InventoryComments.trim() !== ""
+              ? item.InventoryComments
+              : "";
+
+          // Get default comments
+          const defaultComments = getDefaultComments(item.TDGPN);
+
+          // Combine user and default comments
+          let combinedComments = "";
+          if (userComments) {
+            combinedComments = userComments;
+          } else {
+            combinedComments = defaultComments;
+          }
+
+          // Add the combined comments to the item
+          processedItem.InventoryComments = combinedComments;
+
+          return processedItem;
+        });
+
         const payload = {
           excelFixtureDetail: pickListResponse?.excelFixtureDetail || {
             description: "Blank Pick List",
@@ -354,7 +466,7 @@ const PickList = () => {
             tempQuantity: 0,
             odd: new Date().toISOString(),
           },
-          sheetData: filteredData,
+          sheetData: processedSheetData,
         };
         setProduction(true);
         await handleUpdatedDataDownload(payload);
@@ -364,24 +476,235 @@ const PickList = () => {
     }
   };
 
-  const handleSubmit = async () => {
-    setInventory(true);
+  // Validation function for inventory pick list download
+  const validateInventoryPickList = () => {
+    // Reset validation errors
+    setValidationErrors({
+      actualQty: false,
+      mpfQty: false,
+      comments: false,
+      mpfRequestedBy: false,
+    });
 
-    const filteredData = pickList?.filter(
-      (item: any) =>
+    if (!pickList || pickList.length === 0) {
+      toastUtils.error("No pick list data available");
+      return false;
+    }
+
+    const nonGrayRows = pickList.filter((item: any) => !item.isGrayRow);
+
+    // Check if there are any rows with ActualQtyPicked (including default data)
+    const hasPickedRows = nonGrayRows.some((item: any) => {
+      // Check if user has modified quantities or if there's default data
+      const hasUserQty =
+        item.userModifiedActualQty &&
         item.ActualQtyPicked &&
         item.ActualQtyPicked !== "" &&
-        item.ActualQtyPicked !== "0" &&
-        item.isGray === false
-    );
+        item.ActualQtyPicked !== "0";
+      const hasDefaultQty =
+        !item.userModifiedActualQty &&
+        getDefaultQtyToPick(item.TDGPN) &&
+        getDefaultQtyToPick(item.TDGPN) !== "" &&
+        getDefaultQtyToPick(item.TDGPN) !== "0";
+      return hasUserQty || hasDefaultQty;
+    });
 
-    const fallbackData = pickList?.filter((item: any) => item.isGray === false);
+    if (!hasPickedRows) {
+      setValidationErrors((prev) => ({ ...prev, actualQty: true }));
+      toastUtils.error(
+        "Please enter quantities in 'Actual Qty To Be Picked' field"
+      );
+      return false;
+    }
+
+    // Get rows that have quantities (including default data)
+    const rowsWithQty = nonGrayRows.filter((item: any) => {
+      const hasUserQty =
+        item.userModifiedActualQty &&
+        item.ActualQtyPicked &&
+        item.ActualQtyPicked !== "" &&
+        item.ActualQtyPicked !== "0";
+      const hasDefaultQty =
+        !item.userModifiedActualQty &&
+        getDefaultQtyToPick(item.TDGPN) &&
+        getDefaultQtyToPick(item.TDGPN) !== "" &&
+        getDefaultQtyToPick(item.TDGPN) !== "0";
+      return hasUserQty || hasDefaultQty;
+    });
+
+    if (mpfEnabled) {
+      // Check if MPF Requested By field is filled
+      if (!mpfRequestedBy || mpfRequestedBy.trim() === "") {
+        setValidationErrors((prev) => ({ ...prev, mpfRequestedBy: true }));
+        toastUtils.error("MPF Requested By is required when MPF is enabled");
+        return false;
+      }
+
+      // When MPF is enabled, check comments only for items with MPF quantities
+      const rowsWithMpfQty = nonGrayRows.filter(
+        (item: any) => item.mpfQty && item.mpfQty.trim() !== ""
+      );
+
+      // Check if there are any MPF quantities at all
+      if (rowsWithMpfQty.length === 0) {
+        setValidationErrors((prev) => ({ ...prev, mpfQty: true }));
+        toastUtils.error(
+          "Please enter at least one MPF quantity when MPF is enabled"
+        );
+        return false;
+      }
+
+      // Check if all rows with MPF quantities have comments
+      const rowsMissingComments = rowsWithMpfQty.filter((item: any) => {
+        const hasUserComments =
+          item.userModifiedComments &&
+          item.InventoryComments &&
+          item.InventoryComments.trim() !== "";
+        const hasDefaultComments =
+          !item.userModifiedComments &&
+          getDefaultComments(item.TDGPN) &&
+          getDefaultComments(item.TDGPN).trim() !== "";
+        return !hasUserComments && !hasDefaultComments;
+      });
+
+      // Validation: All items with MPF quantities must have comments
+      if (rowsMissingComments.length > 0) {
+        setValidationErrors((prev) => ({ ...prev, comments: true }));
+        toastUtils.error(
+          "Comments are required for all items with MPF quantities"
+        );
+        return false;
+      }
+    } else {
+      // When MPF is disabled, check comments for items with Actual Qty To Be Picked
+      const rowsMissingComments = rowsWithQty.filter((item: any) => {
+        const hasUserComments =
+          item.userModifiedComments &&
+          item.InventoryComments &&
+          item.InventoryComments.trim() !== "";
+        const hasDefaultComments =
+          !item.userModifiedComments &&
+          getDefaultComments(item.TDGPN) &&
+          getDefaultComments(item.TDGPN).trim() !== "";
+        return !hasUserComments && !hasDefaultComments;
+      });
+
+      // Validation: All items with quantities must have comments
+      if (rowsMissingComments.length > 0) {
+        setValidationErrors((prev) => ({ ...prev, comments: true }));
+        toastUtils.error("Comments are required for all items with quantities");
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // Functions to clear validation errors when user interacts with fields
+  const clearActualQtyError = () => {
+    setValidationErrors((prev) => ({ ...prev, actualQty: false }));
+  };
+
+  const clearMpfQtyError = () => {
+    setValidationErrors((prev) => ({ ...prev, mpfQty: false }));
+  };
+
+  const clearCommentsError = () => {
+    setValidationErrors((prev) => ({ ...prev, comments: false }));
+  };
+
+  const clearMpfRequestedByError = () => {
+    setValidationErrors((prev) => ({ ...prev, mpfRequestedBy: false }));
+  };
+
+  const handleSubmit = async () => {
+    // Validate before proceeding
+    if (!validateInventoryPickList()) {
+      return;
+    }
+
+    setInventory(true);
+
+    let filteredData;
+    let fallbackData;
+
+    if (mpfEnabled) {
+      // When MPF is enabled, filter based on MPF quantities
+      filteredData = pickList?.filter(
+        (item: any) =>
+          item.mpfQty &&
+          item.mpfQty !== "" &&
+          item.mpfQty !== "0" &&
+          item.isGray === false
+      );
+      fallbackData = pickList?.filter((item: any) => item.isGray === false);
+    } else {
+      // When MPF is disabled, filter based on ActualQtyPicked (including default values)
+      filteredData = pickList?.filter((item: any) => {
+        if (item.isGray === true) return false;
+
+        // Check if user has entered a quantity
+        const hasUserQty =
+          item.ActualQtyPicked &&
+          item.ActualQtyPicked !== "" &&
+          item.ActualQtyPicked !== "0";
+
+        // Check if there's a default quantity
+        const defaultQty = getDefaultQtyToPick(item.TDGPN);
+        const hasDefaultQty =
+          defaultQty && defaultQty !== "" && defaultQty !== "0";
+
+        // Include if either user quantity or default quantity exists
+        return hasUserQty || hasDefaultQty;
+      });
+      fallbackData = pickList?.filter((item: any) => item.isGray === false);
+    }
 
     try {
       const hasPickedRows = filteredData.length > 0;
       const rowsToDownload = hasPickedRows ? filteredData : fallbackData;
 
       if (rowsToDownload.length > 0) {
+        // Ensure default quantities and comments are included in the data sent to API
+        const processedSheetData = rowsToDownload.map((item: any) => {
+          let processedItem = { ...item };
+
+          // Handle quantity logic: if mpfQty has value, clear ActualQtyPicked
+          if (item.mpfQty && item.mpfQty.trim() !== "" && item.mpfQty !== "0") {
+            // If MPF quantity exists, clear ActualQtyPicked
+            processedItem.ActualQtyPicked = "";
+          } else {
+            // If no MPF quantity, handle ActualQtyPicked normally
+            if (!item.userModifiedActualQty) {
+              const defaultQty = getDefaultQtyToPick(item.TDGPN);
+              processedItem.ActualQtyPicked =
+                defaultQty || item.ActualQtyPicked || "";
+            }
+          }
+
+          // Get user comments if they exist
+          const userComments =
+            item.InventoryComments && item.InventoryComments.trim() !== ""
+              ? item.InventoryComments
+              : "";
+
+          // Get default comments
+          const defaultComments = getDefaultComments(item.TDGPN);
+
+          // Combine user and default comments
+          let combinedComments = "";
+          if (userComments) {
+            combinedComments = userComments;
+          } else {
+            combinedComments = defaultComments;
+          }
+
+          // Add the combined comments to the item
+          processedItem.InventoryComments = combinedComments;
+
+          return processedItem;
+        });
+
         const payload = {
           excelFixtureDetail: pickListResponse?.excelFixtureDetail || {
             description: "Blank Pick List",
@@ -391,7 +714,7 @@ const PickList = () => {
             tempQuantity: 0,
             odd: new Date().toISOString(),
           },
-          sheetData: rowsToDownload,
+          sheetData: processedSheetData,
         };
 
         await handleUpdatedDataDownload(payload);
@@ -402,35 +725,53 @@ const PickList = () => {
   };
 
   useEffect(() => {
-    const fetchPickListData = async () => {
-      if (!fixtureNumber || !selectedsopId) return;
+    // Only handle initial data fetch when fixtureNumber changes
+    // SOP changes are handled by handleChnage function
+    if (!fixtureNumber) return;
 
-      // Reset MPF when fetching new data
-      setMpfEnabled(false);
-      setMpfRequestedBy("");
-      setMpfRequestedByError("");
+    // Reset states when fixture changes
+    setMpfEnabled(false);
+    setMpfRequestedBy("");
+    setMpfRequestedByError("");
+    setPickList([]);
+    setPickListResponse(null);
+  }, [fixtureNumber]);
+
+  // Handle initial data fetch when fixtureNumber changes (only for initial load)
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      if (!fixtureNumber || !fixtureData || fixtureData.length === 0) return;
+
+      // Only fetch initial data if no picklist data exists yet (initial load)
+      if (pickList && pickList.length > 0) return;
+
+      setTblLoading(true);
 
       try {
-        if (selectedsopId === "BlankPickList") {
-          const response = await getBlankPickListData(fixtureNumber, "om");
-          const listData = (response.data.data.listData || []).map(
-            (item: any) => ({
-              ...item,
-              isGrayRow: item.isGray,
-            })
-          );
-          setPickList(listData);
-          setPickListResponse(response.data.data);
-        }
+        // Set default to BlankPickList on initial load and fetch data
+        setSelectedSopId("BlankPickList");
+        const response = await getBlankPickListData(fixtureNumber, "om");
+        const listData = (response.data.data.listData || []).map(
+          (item: any) => ({
+            ...item,
+            isGrayRow: item.isGray,
+            mpfQty: item.mpfQty || "",
+            userModifiedActualQty: false,
+            userModifiedComments: false,
+          })
+        );
+        setPickList(listData);
+        setPickListResponse(response.data.data);
       } catch (error) {
-        // console.error("Error fetching pick list data", error);
         setPickList([]);
         setPickListResponse(null);
+      } finally {
+        setTblLoading(false);
       }
     };
 
-    fetchPickListData();
-  }, [selectedsopId, fixtureNumber]);
+    fetchInitialData();
+  }, [fixtureNumber, fixtureData]); // Removed selectedsopId from dependencies
 
   const getDateStatus = (oddDate: string) => {
     const odd = new Date(oddDate);
@@ -479,19 +820,7 @@ const PickList = () => {
       inventoryItem.allSops.length > 0
     ) {
       const sopData = inventoryItem.allSops[0];
-
-      // If MPF is enabled and there are MPF entries, use the last MPF qtyToPick
-      if (mpfEnabled) {
-        if (sopData.mpf && sopData.mpf.length > 0) {
-          // Get the last (most recent) MPF entry
-          const lastMpfEntry = sopData.mpf[sopData.mpf.length - 1];
-          return "";
-        } else {
-          return "";
-        }
-      }
-
-      // Otherwise, use the regular qtyToPick
+      // Always use the regular qtyToPick
       return sopData.qtyToPick || "";
     }
 
@@ -538,15 +867,9 @@ const PickList = () => {
     return pickListResponse.inventoryData.some((item: any) => {
       if (item.allSops && item.allSops.length > 0) {
         const sopData = item.allSops[0];
-        // Check if there's any qtyToPick data (either regular or MPF)
+        // Check if there's any qtyToPick data
         if (sopData.qtyToPick && sopData.qtyToPick !== "") {
           return true;
-        }
-        // Check if there are MPF entries with qtyToPick
-        if (sopData.mpf && sopData.mpf.length > 0) {
-          return sopData.mpf.some(
-            (mpfEntry: any) => mpfEntry.qtyToPick && mpfEntry.qtyToPick !== ""
-          );
         }
       }
       return false;
@@ -568,6 +891,9 @@ const PickList = () => {
   const resetUserEnteredData = () => {
     if (!pickList || !pickListResponse?.inventoryData) return;
 
+    // Clear comment other states to prevent focus issues
+    setCommentOtherStates({});
+
     setPickList((prev: any[]) =>
       prev.map((item: any) => {
         if (item.isGrayRow) return item;
@@ -580,6 +906,9 @@ const PickList = () => {
           ...item,
           ActualQtyPicked: defaultQty,
           InventoryComments: defaultComments,
+          mpfQty: "", // Reset MPF quantity when turning off MPF
+          userModifiedActualQty: false, // Reset user modification flag
+          userModifiedComments: false, // Reset user modification flag for comments
         };
       })
     );
@@ -719,11 +1048,10 @@ const PickList = () => {
         else {
           // Get default value from inventory data if TDGPN matches
           const defaultValue = getDefaultQtyToPick(row.TDGPN);
-          // Use existing value if user has entered something, otherwise use default
-          const currentValue =
-            row.ActualQtyPicked !== undefined && row.ActualQtyPicked !== ""
-              ? row.ActualQtyPicked
-              : defaultValue;
+          // Use user's value if they have modified the field, otherwise use default
+          const currentValue = row.userModifiedActualQty
+            ? row.ActualQtyPicked || ""
+            : defaultValue;
 
           return (
             <div className="flex justify-center w-[100%] mx-auto">
@@ -733,9 +1061,16 @@ const PickList = () => {
                 value={currentValue}
                 onChange={async (e) => {
                   const val = e.target.value;
+                  clearActualQtyError(); // Clear validation error when user types
                   setPickList((prev: any[]) =>
                     prev.map((item, i) =>
-                      i === index ? { ...item, ActualQtyPicked: val } : item
+                      i === index
+                        ? {
+                            ...item,
+                            ActualQtyPicked: val,
+                            userModifiedActualQty: true, // Mark as user modified
+                          }
+                        : item
                     )
                   );
                 }}
@@ -747,6 +1082,41 @@ const PickList = () => {
         }
       },
     },
+    // MPF column - only show when MPF is enabled
+    ...(mpfEnabled
+      ? [
+          {
+            dataField: "mpfQty",
+            text: "MPF",
+            headerClasses: "w-[112px]",
+            formatter: (cell: any, row: any, index: number) => {
+              if (row.isGrayRow) return;
+              else {
+                return (
+                  <div className="flex justify-center w-[100%] mx-auto">
+                    <FormInput
+                      type="number"
+                      inputTable="!w-[100%] "
+                      value={row.mpfQty || ""}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        clearMpfQtyError(); // Clear validation error when user types
+                        setPickList((prev: any[]) =>
+                          prev.map((item, i) =>
+                            i === index ? { ...item, mpfQty: val } : item
+                          )
+                        );
+                      }}
+                      disabled={row.isGrayRow}
+                      className="w-[100%]"
+                    />
+                  </div>
+                );
+              }
+            },
+          },
+        ]
+      : []),
     {
       dataField: "Location",
       text: "Location",
@@ -773,34 +1143,189 @@ const PickList = () => {
     {
       dataField: "InventoryComments",
       text: "Comments",
+      classNames: "w-[200px]",
       formatter: (cell: any, row: any, index: number) => {
         if (row.isGrayRow) return;
         else {
           // Get default comments from inventory data if TDGPN matches
           const defaultComments = getDefaultComments(row.TDGPN);
-          // Use existing value if user has entered something, otherwise use default
-          const currentValue =
-            row.InventoryComments !== undefined && row.InventoryComments !== ""
-              ? row.InventoryComments
-              : defaultComments;
+          console.log("defaultComments", defaultComments);
+          // Use user's value if they have modified the field, otherwise use default
+          const currentValue = row.userModifiedComments
+            ? row.InventoryComments || ""
+            : defaultComments;
+
+          // Check if current value is a predefined option
+          const isPredefinedOption = commentOptions.some(
+            (opt) => opt.value === currentValue
+          );
+          const isOtherMode =
+            commentOtherStates[index] ||
+            currentValue === "Other" ||
+            (!isPredefinedOption && currentValue !== "");
+          const showTextInput = isOtherMode;
+
+          // Determine what to show in dropdown
+          const dropdownValue = isPredefinedOption
+            ? currentValue
+            : isOtherMode
+            ? "Other"
+            : "";
+
+          // Check if this specific row should show red border
+          // Only show red border if this row has quantity data but is missing comments
+          let hasQuantity = false;
+
+          if (mpfEnabled) {
+            // When MPF is enabled, check for MPF quantities
+            hasQuantity = row.mpfQty && row.mpfQty.trim() !== "";
+          } else {
+            // When MPF is disabled, check for Actual Qty To Be Picked
+            const hasUserQty =
+              row.userModifiedActualQty &&
+              row.ActualQtyPicked &&
+              row.ActualQtyPicked !== "" &&
+              row.ActualQtyPicked !== "0";
+            const hasDefaultQty =
+              !row.userModifiedActualQty &&
+              getDefaultQtyToPick(row.TDGPN) &&
+              getDefaultQtyToPick(row.TDGPN) !== "" &&
+              getDefaultQtyToPick(row.TDGPN) !== "0";
+            hasQuantity = hasUserQty || hasDefaultQty;
+          }
+
+          const hasUserComments =
+            row.userModifiedComments &&
+            row.InventoryComments &&
+            row.InventoryComments.trim() !== "";
+          const hasDefaultComments =
+            !row.userModifiedComments &&
+            getDefaultComments(row.TDGPN) &&
+            getDefaultComments(row.TDGPN).trim() !== "";
+          const hasComments = hasUserComments || hasDefaultComments;
+
+          // Show red border only if this row has quantity but no comments
+          const shouldShowRedBorder =
+            validationErrors.comments && hasQuantity && !hasComments;
 
           return (
-            <div className="flex justify-center w-[100px] mx-auto">
-              <FormInput
-                type="text"
-                inputTable="!w-[100px]"
-                value={currentValue}
-                onChange={async (e) => {
-                  const val = e.target.value;
-                  setPickList((prev: any[]) =>
-                    prev.map((item, i) =>
-                      i === index ? { ...item, InventoryComments: val } : item
-                    )
-                  );
-                }}
-                disabled={row.isGrayRow}
-                className="w-[100px]"
-              />
+            <div className="flex justify-center w-[200px] mx-auto">
+              <div className="relative w-full">
+                <select
+                  value={dropdownValue}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    clearCommentsError(); // Clear validation error when user selects
+                    if (val === "Other") {
+                      // When "Other" is selected, set to "Other" to show text input
+                      setCommentOtherStates((prev) => ({
+                        ...prev,
+                        [index]: true,
+                      }));
+                      setPickList((prev: any[]) =>
+                        prev.map((item, i) =>
+                          i === index
+                            ? {
+                                ...item,
+                                InventoryComments: "Other",
+                                userModifiedComments: true,
+                              }
+                            : item
+                        )
+                      );
+                    } else if (val === "") {
+                      // Clear the field
+                      setCommentOtherStates((prev) => ({
+                        ...prev,
+                        [index]: false,
+                      }));
+                      setPickList((prev: any[]) =>
+                        prev.map((item, i) =>
+                          i === index
+                            ? {
+                                ...item,
+                                InventoryComments: "",
+                                userModifiedComments: true,
+                              }
+                            : item
+                        )
+                      );
+                    } else {
+                      // Predefined option selected
+                      setCommentOtherStates((prev) => ({
+                        ...prev,
+                        [index]: false,
+                      }));
+                      setPickList((prev: any[]) =>
+                        prev.map((item, i) =>
+                          i === index
+                            ? {
+                                ...item,
+                                InventoryComments: val,
+                                userModifiedComments: true,
+                              }
+                            : item
+                        )
+                      );
+                    }
+                  }}
+                  disabled={row.isGrayRow}
+                  className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 ${
+                    shouldShowRedBorder
+                      ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                      : "border-gray-300 focus:ring-blue-500 focus:border-blue-500"
+                  }`}
+                  style={{ minHeight: "32px" }}
+                >
+                  <option value="">Select comment...</option>
+                  {commentOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Text input for custom comments */}
+                {showTextInput && (
+                  <input
+                    type="text"
+                    value={currentValue === "Other" ? "" : currentValue}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      clearCommentsError(); // Clear validation error when user types
+                      setPickList((prev: any[]) =>
+                        prev.map((item, i) =>
+                          i === index
+                            ? {
+                                ...item,
+                                InventoryComments: val,
+                                userModifiedComments: true,
+                              }
+                            : item
+                        )
+                      );
+                    }}
+                    onKeyDown={(e) => {
+                      // Allow backspace, delete, arrow keys, etc.
+                      if (
+                        e.key === "Backspace" ||
+                        e.key === "Delete" ||
+                        e.key === "ArrowLeft" ||
+                        e.key === "ArrowRight"
+                      ) {
+                        return;
+                      }
+                    }}
+                    disabled={row.isGrayRow}
+                    className={`w-full px-2 py-1 text-sm border rounded mt-1 focus:outline-none focus:ring-1 ${
+                      shouldShowRedBorder
+                        ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                        : "border-gray-300 focus:ring-blue-500 focus:border-blue-500"
+                    }`}
+                    placeholder="Enter custom comment..."
+                  />
+                )}
+              </div>
             </div>
           );
         }
@@ -1163,11 +1688,13 @@ const PickList = () => {
                                 // Clear error when user starts typing
                                 if (e.target.value.trim() !== "") {
                                   setMpfRequestedByError("");
+                                  clearMpfRequestedByError();
                                 }
                               }}
                               onBlur={validateMpfRequestedBy}
                               className={`w-full border outline-none rounded px-3 py-1.5 max-w-md text-sm focus:outline-none focus:ring-1 ${
-                                mpfRequestedByError
+                                mpfRequestedByError ||
+                                validationErrors.mpfRequestedBy
                                   ? "border-red-500 focus:ring-red-500"
                                   : "border-[#aaaaaa] focus:ring-blue-500"
                               }`}
@@ -1315,11 +1842,13 @@ const PickList = () => {
                                 // Clear error when user starts typing
                                 if (e.target.value.trim() !== "") {
                                   setMpfRequestedByError("");
+                                  clearMpfRequestedByError();
                                 }
                               }}
                               onBlur={validateMpfRequestedBy}
                               className={`w-full border outline-none rounded px-3 py-1.5 max-w-md text-sm focus:outline-none focus:ring-1 ${
-                                mpfRequestedByError
+                                mpfRequestedByError ||
+                                validationErrors.mpfRequestedBy
                                   ? "border-red-500 focus:ring-red-500"
                                   : "border-[#aaaaaa] focus:ring-blue-500"
                               }`}
@@ -1431,7 +1960,11 @@ const PickList = () => {
         </>
       ) : (
         <div className="pt-3 text-center text-gray-500">
-          <BeatLoader />
+          {!fixtureNumber
+            ? "Please select a fixture number"
+            : !selectedsopId
+            ? "Please select a SOP"
+            : "NO DATA FOUND"}
         </div>
       )}
     </div>

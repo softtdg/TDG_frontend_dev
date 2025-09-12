@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import FormInput from "../components/form/forminpt";
 import LogoutButton from "@/app/components/LogoutButton";
-import Table from "../components/atoms/table";
+import { DataGrid, GridColDef, GridSortModel } from "@mui/x-data-grid";
 import { BeatLoader } from "react-spinners";
 import { useRouter } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
@@ -14,6 +14,7 @@ import {
 
 const InventorySearchPage = () => {
   const [inventorySearch, setInventorySearch] = useState<string>("");
+  const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const router = useRouter();
 
   // Redux hooks
@@ -63,7 +64,7 @@ const InventorySearchPage = () => {
         ...sop,
         sopMpf: "SOP",
         requestedBy: "",
-        date: "",
+        date: new Date(sop.requestedOn).toLocaleDateString(),
       });
 
       // Add MPF rows if they exist
@@ -84,64 +85,104 @@ const InventorySearchPage = () => {
     return tableData;
   };
 
-  // Table columns configuration matching the image format
-  const tableColumns = [
+  // DataGrid columns configuration
+  const columns: GridColDef[] = [
     {
-      dataField: "sopMpf",
-      text: "sop/mpf",
-      headerClasses: "text-center",
-      formatter: (cell: any) => (
-        <div className="text-center text-base font-semibold">{cell || "-"}</div>
-      ),
-    },
-    {
-      dataField: "SOPNumber",
-      text: "sop#",
-      headerClasses: "text-center",
-      formatter: (cell: any) => (
-        <div className="text-center text-base font-semibold">{cell || "-"}</div>
-      ),
-    },
-    {
-      dataField: "totalQty",
-      text: "QTY needed",
-      headerClasses: "text-center",
-      formatter: (cell: any, row: any) => (
-        <div className="text-center text-base font-semibold">
-          {row.sopMpf === "SOP" ? cell || "-" : "-"}
+      field: "sopMpf",
+      headerName: "SOP/MPF",
+      flex: 1,
+      sortable: true,
+      headerAlign: "center",
+      align: "center",
+      minWidth: 100,
+      renderCell: (params) => (
+        <div className="text-center text-sm font-medium">
+          {params.value || "-"}
         </div>
       ),
     },
     {
-      dataField: "qtyToPick",
-      text: "Qty Picked",
-      headerClasses: "text-center",
-      formatter: (cell: any) => (
-        <div className="text-center text-base font-semibold">{cell || "-"}</div>
+      field: "SOPNumber",
+      headerName: "SOP#",
+      flex: 1,
+      sortable: false,
+      headerAlign: "center",
+      align: "center",
+      minWidth: 100,
+      renderCell: (params) => (
+        <div className="text-center text-sm font-medium">
+          {params.value || "-"}
+        </div>
       ),
     },
     {
-      dataField: "comments",
-      text: "comment",
-      headerClasses: "text-center",
-      formatter: (cell: any) => (
-        <div className="text-center text-base font-semibold">{cell || "-"}</div>
+      field: "totalQty",
+      headerName: "QTY needed",
+      flex: 1,
+      sortable: false,
+      headerAlign: "center",
+      align: "center",
+      minWidth: 100,
+      renderCell: (params) => (
+        <div className="text-center text-sm font-medium">
+          {params.row.sopMpf === "SOP" ? params.value || "-" : "-"}
+        </div>
       ),
     },
     {
-      dataField: "requestedBy",
-      text: "Requested by",
-      headerClasses: "text-center",
-      formatter: (cell: any) => (
-        <div className="text-center text-base font-semibold">{cell || "-"}</div>
+      field: "qtyToPick",
+      headerName: "Qty Picked",
+      flex: 1,
+      sortable: false,
+      headerAlign: "center",
+      align: "center",
+      minWidth: 100,
+      renderCell: (params) => (
+        <div className="text-center text-sm font-medium">
+          {params.value || "-"}
+        </div>
       ),
     },
     {
-      dataField: "date",
-      text: "Date",
-      headerClasses: "text-center",
-      formatter: (cell: any) => (
-        <div className="text-center text-base font-semibold">{cell || "-"}</div>
+      field: "comments",
+      headerName: "Comment",
+      flex: 2,
+      sortable: false,
+      headerAlign: "center",
+      align: "center",
+      minWidth: 100,
+      renderCell: (params) => (
+        <div className="text-center text-sm font-medium">
+          {params.value || "-"}
+        </div>
+      ),
+    },
+    {
+      field: "requestedBy",
+      headerName: "Requested by",
+      flex: 1.5,
+      sortable: false,
+      headerAlign: "center",
+      align: "center",
+      minWidth: 100,
+      renderCell: (params) => (
+        <div className="text-center text-sm font-medium">
+          {params.value || "-"}
+        </div>
+      ),
+    },
+    {
+      field: "date",
+      headerName: "Date",
+      flex: 1,
+      sortable: true,
+      headerAlign: "center",
+      align: "center",
+      minWidth: 100,
+      renderCell: (params) => (
+        <div className="text-center text-sm font-medium">
+          {params.value || "-"}
+        </div>
       ),
     },
   ];
@@ -230,7 +271,7 @@ const InventorySearchPage = () => {
           </div>
         ) : error ? (
           <div className="text-center py-8">
-            <p className="text-red-500 mb-4">Error: {error}</p>
+            <p className="text-red-500 mb-4">{error}</p>
           </div>
         ) : hasSearched ? (
           <div>
@@ -245,11 +286,115 @@ const InventorySearchPage = () => {
                     </span>
                   </p> */}
                 </div>
-                <Table
-                  columns={tableColumns}
-                  data={processTableData(searchResults.data.allSops)}
-                  className="min-w-full"
-                />
+                <div style={{ height: 400, width: "100%" }}>
+                  <DataGrid
+                    rows={processTableData(searchResults.data.allSops).map(
+                      (row, index) => ({
+                        ...row,
+                        id: index, // DataGrid requires unique id for each row
+                      })
+                    )}
+                    columns={columns}
+                    sortModel={sortModel}
+                    onSortModelChange={setSortModel}
+                    pageSizeOptions={[5, 10, 25]}
+                    initialState={{
+                      pagination: {
+                        paginationModel: { page: 0, pageSize: 10 },
+                      },
+                    }}
+                    sx={{
+                      border: "1px solid #000000",
+                      borderRadius: "8px",
+                      overflow: "hidden",
+                      fontFamily:
+                        "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                      "& .MuiDataGrid-columnHeaders": {
+                        backgroundColor: "#113d5a !important",
+                        color: "white",
+                        fontSize: "14px",
+                        fontWeight: "600",
+                        fontFamily:
+                          "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                        // borderBottom: "2px solid #0a2a3e",
+                        "& .MuiDataGrid-columnHeaderTitle": {
+                          fontWeight: "600",
+                          fontFamily:
+                            "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                        },
+                      },
+                      "& .MuiDataGrid-columnHeader": {
+                        backgroundColor: "#113d5a !important",
+                        borderRight: "1px solid #000000",
+                        "&:last-child": {
+                          borderRight: "none",
+                        },
+                        "&.MuiDataGrid-columnHeader--sorted": {
+                          backgroundColor: "#0a2a3e",
+                        },
+                      },
+                      "& .MuiDataGrid-cell": {
+                        borderRight: "1px solid #000000",
+                        borderBottom: "1px solid #000000",
+                        fontSize: "16px !important",
+                        fontWeight: "500",
+                        color: "#333",
+                        fontFamily:
+                          "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        "&:last-child": {
+                          borderRight: "none",
+                        },
+                        "& .text-sm": {
+                          fontSize: "15px !important",
+                          fontFamily:
+                            "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                        },
+                      },
+                      "& .MuiDataGrid-row": {
+                        backgroundColor: "white",
+                        "&:nth-of-type(even)": {
+                          backgroundColor: "#fafafa",
+                        },
+                        "&:hover": {
+                          backgroundColor: "#f0f8ff",
+                        },
+                        "&.Mui-selected": {
+                          backgroundColor: "#e3f2fd",
+                          "&:hover": {
+                            backgroundColor: "#bbdefb",
+                          },
+                        },
+                      },
+                      "& .MuiDataGrid-footerContainer": {
+                        borderTop: "1px solid #000000",
+                        backgroundColor: "#f8f9fa",
+                        fontSize: "16px !important",
+                        fontFamily:
+                          "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                      },
+                      "& .MuiDataGrid-toolbarContainer": {
+                        // borderBottom: "1px solid #e0e0e0",
+                        backgroundColor: "#f8f9fa",
+                        padding: "8px 16px",
+                      },
+                      "& .MuiDataGrid-sortIcon": {
+                        color: "white",
+                      },
+                      "& .MuiDataGrid-menuIcon": {
+                        color: "white",
+                      },
+                      "& .MuiDataGrid-menuIconButton": {
+                        color: "white !important",
+                      },
+                      "& .MuiIconButton-sizeSmall": {
+                        color: "white !important",
+                      },
+                    }}
+                  />
+                </div>
               </div>
             ) : (
               <div className="text-center py-8">

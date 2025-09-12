@@ -16,6 +16,7 @@ interface FormInputProps {
   value?: string;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onWheel?: (e: React.WheelEvent<HTMLInputElement>) => void;
   label?: string;
   placeholder?: string;
   disabled?: boolean;
@@ -33,6 +34,7 @@ const FormInput: React.FC<FormInputProps> = ({
   value,
   onChange,
   onKeyDown,
+  onWheel,
   label,
   placeholder,
   disabled,
@@ -42,6 +44,18 @@ const FormInput: React.FC<FormInputProps> = ({
   labelCls,
   className,
 }): JSX.Element => {
+  // Default wheel handler for number inputs to prevent scroll wheel from changing values
+  const handleWheel = (e: React.WheelEvent<HTMLInputElement>) => {
+    if (type === "number") {
+      e.preventDefault();
+      e.currentTarget.blur(); // Remove focus to prevent accidental changes
+    }
+    // Call custom onWheel handler if provided
+    if (onWheel) {
+      onWheel(e);
+    }
+  };
+
   return (
     <div
       className={`w-full ${
@@ -64,6 +78,7 @@ const FormInput: React.FC<FormInputProps> = ({
         value={value}
         onChange={onChange}
         onKeyDown={onKeyDown}
+        onWheel={handleWheel}
         placeholder={placeholder}
         disabled={disabled}
         required={required}
