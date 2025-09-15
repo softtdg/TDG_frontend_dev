@@ -25,6 +25,7 @@ interface FormInputProps {
   inputTable?: string;
   labelCls?: string;
   className?: string;
+  inputClass?: string;
 }
 
 const FormInput: React.FC<FormInputProps> = ({
@@ -43,6 +44,7 @@ const FormInput: React.FC<FormInputProps> = ({
   inputTable,
   labelCls,
   className,
+  inputClass,
 }): JSX.Element => {
   // Default wheel handler for number inputs to prevent scroll wheel from changing values
   const handleWheel = (e: React.WheelEvent<HTMLInputElement>) => {
@@ -71,7 +73,7 @@ const FormInput: React.FC<FormInputProps> = ({
         </label>
       )}
       <input
-        className={`border outline-none border-[#aaaaaa] rounded px-3 py-1.5 w-full max-w-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputTable}`}
+        className={` ${inputClass} border outline-none border-[#aaaaaa] rounded px-3 py-1.5 w-full max-w-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputTable}`}
         type={type}
         id={id}
         name={name}

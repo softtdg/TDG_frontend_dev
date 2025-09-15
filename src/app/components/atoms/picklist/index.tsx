@@ -517,6 +517,24 @@ const PickList = () => {
       return false;
     }
 
+    // Check if Actual Qty To Be Picked is greater than Total Qty Needed
+    const invalidQtyRows = nonGrayRows.filter((item: any) => {
+      const actualQty = item.userModifiedActualQty
+        ? parseFloat(item.ActualQtyPicked) || 0
+        : parseFloat(getDefaultQtyToPick(item.TDGPN)) || 0;
+      const totalQty = parseFloat(item.TotalQtyNeeded) || 0;
+
+      return actualQty > totalQty && actualQty > 0;
+    });
+
+    if (invalidQtyRows.length > 0) {
+      setValidationErrors((prev) => ({ ...prev, actualQty: true }));
+      toastUtils.error(
+        "Actual Qty To Be Picked cannot be greater than Total Qty Needed"
+      );
+      return false;
+    }
+
     // Get rows that have quantities (including default data)
     const rowsWithQty = nonGrayRows.filter((item: any) => {
       const hasUserQty =
@@ -576,25 +594,8 @@ const PickList = () => {
         return false;
       }
     } else {
-      // When MPF is disabled, check comments for items with Actual Qty To Be Picked
-      const rowsMissingComments = rowsWithQty.filter((item: any) => {
-        const hasUserComments =
-          item.userModifiedComments &&
-          item.InventoryComments &&
-          item.InventoryComments.trim() !== "";
-        const hasDefaultComments =
-          !item.userModifiedComments &&
-          getDefaultComments(item.TDGPN) &&
-          getDefaultComments(item.TDGPN).trim() !== "";
-        return !hasUserComments && !hasDefaultComments;
-      });
-
-      // Validation: All items with quantities must have comments
-      if (rowsMissingComments.length > 0) {
-        setValidationErrors((prev) => ({ ...prev, comments: true }));
-        toastUtils.error("Comments are required for all items with quantities");
-        return false;
-      }
+      // When MPF is disabled, no comment validation is required
+      // Comments are only required when MPF is enabled
     }
 
     return true;
@@ -1053,6 +1054,26 @@ const PickList = () => {
             ? row.ActualQtyPicked || ""
             : defaultValue;
 
+          // Check if this row has invalid quantity (Actual Qty > Total Qty)
+          const actualQty = parseFloat(currentValue) || 0;
+          const totalQty = parseFloat(row.TotalQtyNeeded) || 0;
+          const hasInvalidQty = actualQty > totalQty && actualQty > 0;
+          const shouldShowRedBorder =
+            validationErrors.actualQty && hasInvalidQty;
+
+          // When MPF is enabled, show only the number (not input field)
+          if (mpfEnabled) {
+            return (
+              <div className="flex justify-center w-[100%] mx-auto">
+                <div
+                  className={`text-center text-base font-semibold w-[100%] py-2 ${""}`}
+                >
+                  {currentValue || ""}
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div className="flex justify-center w-[100%] mx-auto">
               <FormInput
@@ -1075,7 +1096,12 @@ const PickList = () => {
                   );
                 }}
                 disabled={row.isGrayRow}
-                className="w-[100%]"
+                className={`w-[100%] `}
+                inputClass={`${
+                  shouldShowRedBorder
+                    ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                    : ""
+                }`}
               />
             </div>
           );
@@ -1140,197 +1166,205 @@ const PickList = () => {
       },
     },
 
-    {
-      dataField: "InventoryComments",
-      text: "Comments",
-      classNames: "w-[200px]",
-      formatter: (cell: any, row: any, index: number) => {
-        if (row.isGrayRow) return;
-        else {
-          // Get default comments from inventory data if TDGPN matches
-          const defaultComments = getDefaultComments(row.TDGPN);
-          console.log("defaultComments", defaultComments);
-          // Use user's value if they have modified the field, otherwise use default
-          const currentValue = row.userModifiedComments
-            ? row.InventoryComments || ""
-            : defaultComments;
+    // Comments column - only show when MPF is enabled
+    ...(mpfEnabled
+      ? [
+          {
+            dataField: "InventoryComments",
+            text: "Comments",
+            classNames: "w-[200px]",
+            formatter: (cell: any, row: any, index: number) => {
+              if (row.isGrayRow) return;
+              else {
+                // Get default comments from inventory data if TDGPN matches
+                const defaultComments = getDefaultComments(row.TDGPN);
+                console.log("defaultComments", defaultComments);
+                // Use user's value if they have modified the field, otherwise use default
+                const currentValue = row.userModifiedComments
+                  ? row.InventoryComments || ""
+                  : defaultComments;
 
-          // Check if current value is a predefined option
-          const isPredefinedOption = commentOptions.some(
-            (opt) => opt.value === currentValue
-          );
-          const isOtherMode =
-            commentOtherStates[index] ||
-            currentValue === "Other" ||
-            (!isPredefinedOption && currentValue !== "");
-          const showTextInput = isOtherMode;
+                // Check if current value is a predefined option
+                const isPredefinedOption = commentOptions.some(
+                  (opt) => opt.value === currentValue
+                );
+                const isOtherMode =
+                  commentOtherStates[index] ||
+                  currentValue === "Other" ||
+                  (!isPredefinedOption && currentValue !== "");
+                const showTextInput = isOtherMode;
 
-          // Determine what to show in dropdown
-          const dropdownValue = isPredefinedOption
-            ? currentValue
-            : isOtherMode
-            ? "Other"
-            : "";
+                // Determine what to show in dropdown
+                const dropdownValue = isPredefinedOption
+                  ? currentValue
+                  : isOtherMode
+                  ? "Other"
+                  : "";
 
-          // Check if this specific row should show red border
-          // Only show red border if this row has quantity data but is missing comments
-          let hasQuantity = false;
+                // Check if this specific row should show red border
+                // Only show red border if this row has quantity data but is missing comments
+                let hasQuantity = false;
 
-          if (mpfEnabled) {
-            // When MPF is enabled, check for MPF quantities
-            hasQuantity = row.mpfQty && row.mpfQty.trim() !== "";
-          } else {
-            // When MPF is disabled, check for Actual Qty To Be Picked
-            const hasUserQty =
-              row.userModifiedActualQty &&
-              row.ActualQtyPicked &&
-              row.ActualQtyPicked !== "" &&
-              row.ActualQtyPicked !== "0";
-            const hasDefaultQty =
-              !row.userModifiedActualQty &&
-              getDefaultQtyToPick(row.TDGPN) &&
-              getDefaultQtyToPick(row.TDGPN) !== "" &&
-              getDefaultQtyToPick(row.TDGPN) !== "0";
-            hasQuantity = hasUserQty || hasDefaultQty;
-          }
+                if (mpfEnabled) {
+                  // When MPF is enabled, check for MPF quantities
+                  hasQuantity = row.mpfQty && row.mpfQty.trim() !== "";
+                } else {
+                  // When MPF is disabled, check for Actual Qty To Be Picked
+                  const hasUserQty =
+                    row.userModifiedActualQty &&
+                    row.ActualQtyPicked &&
+                    row.ActualQtyPicked !== "" &&
+                    row.ActualQtyPicked !== "0";
+                  const hasDefaultQty =
+                    !row.userModifiedActualQty &&
+                    getDefaultQtyToPick(row.TDGPN) &&
+                    getDefaultQtyToPick(row.TDGPN) !== "" &&
+                    getDefaultQtyToPick(row.TDGPN) !== "0";
+                  hasQuantity = hasUserQty || hasDefaultQty;
+                }
 
-          const hasUserComments =
-            row.userModifiedComments &&
-            row.InventoryComments &&
-            row.InventoryComments.trim() !== "";
-          const hasDefaultComments =
-            !row.userModifiedComments &&
-            getDefaultComments(row.TDGPN) &&
-            getDefaultComments(row.TDGPN).trim() !== "";
-          const hasComments = hasUserComments || hasDefaultComments;
+                const hasUserComments =
+                  row.userModifiedComments &&
+                  row.InventoryComments &&
+                  row.InventoryComments.trim() !== "";
+                const hasDefaultComments =
+                  !row.userModifiedComments &&
+                  getDefaultComments(row.TDGPN) &&
+                  getDefaultComments(row.TDGPN).trim() !== "";
+                const hasComments = hasUserComments || hasDefaultComments;
 
-          // Show red border only if this row has quantity but no comments
-          const shouldShowRedBorder =
-            validationErrors.comments && hasQuantity && !hasComments;
+                // Show red border only if MPF is enabled, this row has MPF quantity but no comments
+                const shouldShowRedBorder =
+                  mpfEnabled &&
+                  validationErrors.comments &&
+                  hasQuantity &&
+                  !hasComments;
 
-          return (
-            <div className="flex justify-center w-[200px] mx-auto">
-              <div className="relative w-full">
-                <select
-                  value={dropdownValue}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    clearCommentsError(); // Clear validation error when user selects
-                    if (val === "Other") {
-                      // When "Other" is selected, set to "Other" to show text input
-                      setCommentOtherStates((prev) => ({
-                        ...prev,
-                        [index]: true,
-                      }));
-                      setPickList((prev: any[]) =>
-                        prev.map((item, i) =>
-                          i === index
-                            ? {
-                                ...item,
-                                InventoryComments: "Other",
-                                userModifiedComments: true,
-                              }
-                            : item
-                        )
-                      );
-                    } else if (val === "") {
-                      // Clear the field
-                      setCommentOtherStates((prev) => ({
-                        ...prev,
-                        [index]: false,
-                      }));
-                      setPickList((prev: any[]) =>
-                        prev.map((item, i) =>
-                          i === index
-                            ? {
-                                ...item,
-                                InventoryComments: "",
-                                userModifiedComments: true,
-                              }
-                            : item
-                        )
-                      );
-                    } else {
-                      // Predefined option selected
-                      setCommentOtherStates((prev) => ({
-                        ...prev,
-                        [index]: false,
-                      }));
-                      setPickList((prev: any[]) =>
-                        prev.map((item, i) =>
-                          i === index
-                            ? {
-                                ...item,
-                                InventoryComments: val,
-                                userModifiedComments: true,
-                              }
-                            : item
-                        )
-                      );
-                    }
-                  }}
-                  disabled={row.isGrayRow}
-                  className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 ${
-                    shouldShowRedBorder
-                      ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                      : "border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-                  }`}
-                  style={{ minHeight: "32px" }}
-                >
-                  <option value="">Select comment...</option>
-                  {commentOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                return (
+                  <div className="flex justify-center w-[200px] mx-auto">
+                    <div className="relative w-full">
+                      <select
+                        value={dropdownValue}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          clearCommentsError(); // Clear validation error when user selects
+                          if (val === "Other") {
+                            // When "Other" is selected, set to "Other" to show text input
+                            setCommentOtherStates((prev) => ({
+                              ...prev,
+                              [index]: true,
+                            }));
+                            setPickList((prev: any[]) =>
+                              prev.map((item, i) =>
+                                i === index
+                                  ? {
+                                      ...item,
+                                      InventoryComments: "Other",
+                                      userModifiedComments: true,
+                                    }
+                                  : item
+                              )
+                            );
+                          } else if (val === "") {
+                            // Clear the field
+                            setCommentOtherStates((prev) => ({
+                              ...prev,
+                              [index]: false,
+                            }));
+                            setPickList((prev: any[]) =>
+                              prev.map((item, i) =>
+                                i === index
+                                  ? {
+                                      ...item,
+                                      InventoryComments: "",
+                                      userModifiedComments: true,
+                                    }
+                                  : item
+                              )
+                            );
+                          } else {
+                            // Predefined option selected
+                            setCommentOtherStates((prev) => ({
+                              ...prev,
+                              [index]: false,
+                            }));
+                            setPickList((prev: any[]) =>
+                              prev.map((item, i) =>
+                                i === index
+                                  ? {
+                                      ...item,
+                                      InventoryComments: val,
+                                      userModifiedComments: true,
+                                    }
+                                  : item
+                              )
+                            );
+                          }
+                        }}
+                        disabled={row.isGrayRow}
+                        className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 ${
+                          shouldShowRedBorder
+                            ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                            : "border-gray-300 focus:ring-blue-500 focus:border-blue-500"
+                        }`}
+                        style={{ minHeight: "32px" }}
+                      >
+                        <option value="">Select comment...</option>
+                        {commentOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
 
-                {/* Text input for custom comments */}
-                {showTextInput && (
-                  <input
-                    type="text"
-                    value={currentValue === "Other" ? "" : currentValue}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      clearCommentsError(); // Clear validation error when user types
-                      setPickList((prev: any[]) =>
-                        prev.map((item, i) =>
-                          i === index
-                            ? {
-                                ...item,
-                                InventoryComments: val,
-                                userModifiedComments: true,
-                              }
-                            : item
-                        )
-                      );
-                    }}
-                    onKeyDown={(e) => {
-                      // Allow backspace, delete, arrow keys, etc.
-                      if (
-                        e.key === "Backspace" ||
-                        e.key === "Delete" ||
-                        e.key === "ArrowLeft" ||
-                        e.key === "ArrowRight"
-                      ) {
-                        return;
-                      }
-                    }}
-                    disabled={row.isGrayRow}
-                    className={`w-full px-2 py-1 text-sm border rounded mt-1 focus:outline-none focus:ring-1 ${
-                      shouldShowRedBorder
-                        ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                        : "border-gray-300 focus:ring-blue-500 focus:border-blue-500"
-                    }`}
-                    placeholder="Enter custom comment..."
-                  />
-                )}
-              </div>
-            </div>
-          );
-        }
-      },
-    },
+                      {/* Text input for custom comments */}
+                      {showTextInput && (
+                        <input
+                          type="text"
+                          value={currentValue === "Other" ? "" : currentValue}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            clearCommentsError(); // Clear validation error when user types
+                            setPickList((prev: any[]) =>
+                              prev.map((item, i) =>
+                                i === index
+                                  ? {
+                                      ...item,
+                                      InventoryComments: val,
+                                      userModifiedComments: true,
+                                    }
+                                  : item
+                              )
+                            );
+                          }}
+                          onKeyDown={(e) => {
+                            // Allow backspace, delete, arrow keys, etc.
+                            if (
+                              e.key === "Backspace" ||
+                              e.key === "Delete" ||
+                              e.key === "ArrowLeft" ||
+                              e.key === "ArrowRight"
+                            ) {
+                              return;
+                            }
+                          }}
+                          disabled={row.isGrayRow}
+                          className={`w-full px-2 py-1 text-sm border rounded mt-1 focus:outline-none focus:ring-1 ${
+                            shouldShowRedBorder
+                              ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                              : "border-gray-300 focus:ring-blue-500 focus:border-blue-500"
+                          }`}
+                          placeholder="Enter custom comment..."
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+            },
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -1567,7 +1601,11 @@ const PickList = () => {
                 <table className="table-auto border-collapse border border-black text-sm w-full">
                   <tbody>
                     {/* Row 1 */}
-                    <tr className="bg-blue-100 font-bold">
+                    <tr
+                      className={`font-bold ${
+                        mpfEnabled ? "bg-green-50" : "bg-blue-100"
+                      }`}
+                    >
                       <td className="border px-2 py-1">SOP #</td>
                       <td className="border px-2 py-1 text-center">
                         {pickListResponse.excelFixtureDetail.sopNum}
@@ -1613,21 +1651,33 @@ const PickList = () => {
 
                     {/* Row 2 */}
                     <tr>
-                      <td className="border px-2 py-1 font-bold bg-blue-100">
+                      <td
+                        className={`border px-2 py-1 font-bold ${
+                          mpfEnabled ? "bg-green-50" : "bg-blue-100"
+                        }`}
+                      >
                         PROJECT
                       </td>
                       <td className="border px-2 py-1 text-center" colSpan={2}>
                         {pickListResponse.excelFixtureDetail.programName}
                       </td>
                       <td className="border px-2 py-1 " colSpan={2}></td>
-                      <td className="border px-2 py-1 font-bold bg-blue-100">
+                      <td
+                        className={`border px-2 py-1 font-bold ${
+                          mpfEnabled ? "bg-green-50" : "bg-blue-100"
+                        }`}
+                      >
                         PICK LIST LOG NUMBER
                       </td>
                     </tr>
 
                     {/* Row 3 */}
                     <tr>
-                      <td className="border px-2 py-1 font-bold bg-blue-100">
+                      <td
+                        className={`border px-2 py-1 font-bold ${
+                          mpfEnabled ? "bg-green-50" : "bg-blue-100"
+                        }`}
+                      >
                         FIXTURE
                       </td>
                       <td className="border px-2 py-1 text-center">
@@ -1644,7 +1694,11 @@ const PickList = () => {
                         </span>
                       </td>
 
-                      <td className="border px-2 py-1 font-bold bg-blue-100">
+                      <td
+                        className={`border px-2 py-1 font-bold ${
+                          mpfEnabled ? "bg-green-50" : "bg-blue-100"
+                        }`}
+                      >
                         DATE PICKED
                       </td>
                       <td className="border px-2 py-1"></td>
@@ -1652,7 +1706,11 @@ const PickList = () => {
 
                     {/* Row 4 */}
                     <tr>
-                      <td className="border px-2 py-1 font-bold bg-blue-100">
+                      <td
+                        className={`border px-2 py-1 font-bold ${
+                          mpfEnabled ? "bg-green-50" : "bg-blue-100"
+                        }`}
+                      >
                         QUANTITY
                       </td>
                       <td className="border px-2 py-1 text-center">
@@ -1660,7 +1718,9 @@ const PickList = () => {
                       </td>
 
                       <td
-                        className="border px-2 py-1 font-bold bg-blue-100 relative"
+                        className={`border px-2 py-1 font-bold relative ${
+                          mpfEnabled ? "bg-green-50" : "bg-blue-100"
+                        }`}
                         rowSpan={2}
                         colSpan={1}
                       >
@@ -1712,7 +1772,11 @@ const PickList = () => {
 
                     {/* Row 5 */}
                     <tr>
-                      <td className="border px-2 py-1 font-bold bg-blue-100">
+                      <td
+                        className={`border px-2 py-1 font-bold ${
+                          mpfEnabled ? "bg-green-50" : "bg-blue-100"
+                        }`}
+                      >
                         REQUIRED ON
                       </td>
                       <td className="border px-2 py-1 text-center">
@@ -1919,7 +1983,11 @@ const PickList = () => {
                   }
                 }}
                 disabled={loading}
-                className="bg-[#113d5a] text-white border-none p-3 px-4 w-full sm:w-auto"
+                className={`border-none p-3 px-4 w-full sm:w-auto ${
+                  mpfEnabled
+                    ? "bg-[#b7e5b3] text-green-800"
+                    : "bg-[#113d5a] text-white"
+                }`}
               />
             </div>
 
@@ -1937,7 +2005,11 @@ const PickList = () => {
                 }
                 onClick={handleSubmit}
                 disabled={inventory}
-                className="bg-[#113d5a] text-white border-none p-3 px-4 w-full sm:w-auto"
+                className={`border-none p-3 px-4 w-full sm:w-auto ${
+                  mpfEnabled
+                    ? "bg-[#b7e5b3] text-green-800"
+                    : "bg-[#113d5a] text-white"
+                }`}
               />
             </div>
 
@@ -1953,7 +2025,11 @@ const PickList = () => {
                 onClick={handleProductionListSubmit}
                 disabled={production}
                 icon={<FiDownload className="text-xl" strokeWidth={2.5} />}
-                className="bg-[#113d5a] text-white border-none p-3 px-4 w-full sm:w-auto"
+                className={`border-none p-3 px-4 w-full sm:w-auto ${
+                  mpfEnabled
+                    ? "bg-[#b7e5b3] text-green-800"
+                    : "bg-[#113d5a] text-white"
+                }`}
               />
             </div>
           </div>

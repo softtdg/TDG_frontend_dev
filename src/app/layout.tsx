@@ -4,6 +4,7 @@ import "./globals.css";
 import ReduxProvider from "./providers/ReduxProvider";
 import ToastProvider from "./components/ToastProvider";
 import ServerAuthWrapper from "./components/ServerAuthWrapper";
+import Header from "./components/Header";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,7 +36,10 @@ export default function RootLayout({
         suppressHydrationWarning={true}
       >
         <ReduxProvider>
-          <ServerAuthWrapper>{children}</ServerAuthWrapper>
+          <ServerAuthWrapper>
+            <Header />
+            {children}
+          </ServerAuthWrapper>
           <ToastProvider />
         </ReduxProvider>
       </body>
