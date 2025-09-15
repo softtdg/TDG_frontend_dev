@@ -40,6 +40,32 @@ const formatDate = (dateString: string) => {
   }
 };
 
+// Utility function to handle null/undefined values in sheet data
+const sanitizeSheetDataItem = (item: any) => {
+  return {
+    ...item,
+    // Numeric fields - set to 0 if null/undefined
+    TotalQtyNeeded: item.TotalQtyNeeded ?? 0,
+    QuantityPerFixture: item.QuantityPerFixture ?? 0,
+    Quantity: item.Quantity ?? 0,
+    Size: item.Size ?? 0,
+    // String fields - set to empty string if null/undefined
+    ActualQtyPicked:
+      item.ActualQtyPicked === "" || item.ActualQtyPicked === null
+        ? 0
+        : item.ActualQtyPicked,
+    mpfQty: item.mpfQty === "" || item.mpfQty === null ? 0 : item.mpfQty,
+    InventoryComments: item.InventoryComments ?? "",
+    TDGPN: item.TDGPN ?? "",
+    Description: item.Description ?? "",
+    Vendor: item.Vendor ?? "",
+    VendorPN: item.VendorPN ?? "",
+    UnitOfMeasure: item.UnitOfMeasure ?? "",
+    Location: item.Location ?? "",
+    LeadHandComments: item.LeadHandComments ?? "",
+  };
+};
+
 const PickList = () => {
   const searchParams = useSearchParams();
   const [fixtureNumber, setFixtureNumber] = useState<string>("");
@@ -419,7 +445,8 @@ const PickList = () => {
       if (filteredData.length > 0) {
         // Ensure default quantities and comments are included in the data sent to API
         const processedSheetData = filteredData.map((item: any) => {
-          let processedItem = { ...item };
+          // First sanitize null/undefined values
+          let processedItem = sanitizeSheetDataItem(item);
 
           // Handle quantity logic: if mpfQty has value, clear ActualQtyPicked
           if (item.mpfQty && item.mpfQty.trim() !== "" && item.mpfQty !== "0") {
@@ -448,7 +475,7 @@ const PickList = () => {
           if (userComments) {
             combinedComments = userComments;
           } else {
-            combinedComments = defaultComments;
+            combinedComments = defaultComments || "";
           }
 
           // Add the combined comments to the item
@@ -458,13 +485,19 @@ const PickList = () => {
         });
 
         const payload = {
-          excelFixtureDetail: pickListResponse?.excelFixtureDetail || {
-            description: "Blank Pick List",
-            sopNum: "",
-            programName: "",
-            fixture: fixtureNumber,
-            tempQuantity: 0,
-            odd: new Date().toISOString(),
+          excelFixtureDetail: {
+            description:
+              pickListResponse?.excelFixtureDetail?.description ||
+              "Blank Pick List",
+            sopNum: pickListResponse?.excelFixtureDetail?.sopNum || "",
+            programName:
+              pickListResponse?.excelFixtureDetail?.programName || "",
+            fixture: fixtureNumber || "",
+            tempQuantity:
+              pickListResponse?.excelFixtureDetail?.tempQuantity ?? 0,
+            odd:
+              pickListResponse?.excelFixtureDetail?.odd ||
+              new Date().toISOString(),
           },
           sheetData: processedSheetData,
         };
@@ -668,7 +701,8 @@ const PickList = () => {
       if (rowsToDownload.length > 0) {
         // Ensure default quantities and comments are included in the data sent to API
         const processedSheetData = rowsToDownload.map((item: any) => {
-          let processedItem = { ...item };
+          // First sanitize null/undefined values
+          let processedItem = sanitizeSheetDataItem(item);
 
           // Handle quantity logic: if mpfQty has value, clear ActualQtyPicked
           if (item.mpfQty && item.mpfQty.trim() !== "" && item.mpfQty !== "0") {
@@ -697,7 +731,7 @@ const PickList = () => {
           if (userComments) {
             combinedComments = userComments;
           } else {
-            combinedComments = defaultComments;
+            combinedComments = defaultComments || "";
           }
 
           // Add the combined comments to the item
@@ -707,13 +741,19 @@ const PickList = () => {
         });
 
         const payload = {
-          excelFixtureDetail: pickListResponse?.excelFixtureDetail || {
-            description: "Blank Pick List",
-            sopNum: "",
-            programName: "",
-            fixture: fixtureNumber,
-            tempQuantity: 0,
-            odd: new Date().toISOString(),
+          excelFixtureDetail: {
+            description:
+              pickListResponse?.excelFixtureDetail?.description ||
+              "Blank Pick List",
+            sopNum: pickListResponse?.excelFixtureDetail?.sopNum || "",
+            programName:
+              pickListResponse?.excelFixtureDetail?.programName || "",
+            fixture: fixtureNumber || "",
+            tempQuantity:
+              pickListResponse?.excelFixtureDetail?.tempQuantity ?? 0,
+            odd:
+              pickListResponse?.excelFixtureDetail?.odd ||
+              new Date().toISOString(),
           },
           sheetData: processedSheetData,
         };
@@ -1372,12 +1412,22 @@ const PickList = () => {
       <div className="shadow-[0px_0px_0px_1px_rgba(0,0,0,0.06),0px_1px_1px_-0.5px_rgba(0,0,0,0.06),0px_3px_3px_-1.5px_rgba(0,0,0,0.06),_0px_6px_6px_-3px_rgba(0,0,0,0.06),0px_12px_12px_-6px_rgba(0,0,0,0.06),0px_24px_24px_-12px_rgba(0,0,0,0.06)] sticky top-0 z-20 bg-white">
         <div className="p-2 text-center">
           {/* <h2 className="text-xl font-bold mb-2">Pick List</h2> */}
-          {pickListResponse?.excelFixtureDetail?.description && (
-            <div>
-              <span className="text-xl text-[#113d5a] font-bold">
-                {pickListResponse.excelFixtureDetail.description}
-              </span>
-            </div>
+          {mpfEnabled ? (
+            mpfEnabled ? (
+              <div className="text-xl text-green-800 font-bold">
+                Manual Pick Form
+              </div>
+            ) : (
+              ""
+            )
+          ) : (
+            pickListResponse?.excelFixtureDetail?.description && (
+              <div>
+                <span className="text-xl text-[#113d5a] font-bold">
+                  {pickListResponse.excelFixtureDetail.description}
+                </span>
+              </div>
+            )
           )}
           {fixtureNumber && (
             <p className="text-[#1e557a] text-lg font-medium">
@@ -1429,7 +1479,11 @@ const PickList = () => {
           {/* Left: Dropdown Fieldset */}
           <div className="w-full lg:w-auto lg:min-w-[300px]">
             <fieldset className="w-full pt-3 border border-gray-300 rounded p-4">
-              <legend className="text-base font-semibold text-[#113d5a] px-2">
+              <legend
+                className={`text-base font-semibold px-2 ${
+                  mpfEnabled ? "text-green-800" : "text-[#113d5a]"
+                }`}
+              >
                 Select SOPLeadHandEntryId
               </legend>
               <div className="w-full">
@@ -1583,11 +1637,19 @@ const PickList = () => {
       ) : pickList && pickList.length > 0 ? (
         <>
           <div className="p-2">
-            <h2 className="flex justify-center text-[#113d5a] font-extrabold text-2xl">
+            <h2
+              className={`flex justify-center font-extrabold text-2xl ${
+                mpfEnabled ? "text-green-800" : "text-[#113d5a]"
+              }`}
+            >
               New Production List
             </h2>
             {selectedsopId && selectedsopId !== "BlankPickList" ? (
-              <span className="text-center font-bold text-2xl flex justify-center text-[#1e557a] pb-3 max-md:pb-[30px]">
+              <span
+                className={`text-center font-bold text-2xl flex justify-center pb-3 max-md:pb-[30px] ${
+                  mpfEnabled ? "text-green-800" : "text-[#1e557a]"
+                }`}
+              >
                 SOP : {selectedsopId}
               </span>
             ) : (
@@ -1597,7 +1659,11 @@ const PickList = () => {
               </span>
             )}
             {pickListResponse && selectedsopId !== "BlankPickList" ? (
-              <div className="flex gap-2.5 text-[#1e557a] font-medium justify-center text-lg pb-2 max-md:pb-[30px]">
+              <div
+                className={`flex gap-2.5  font-medium justify-center text-lg pb-2 max-md:pb-[30px] ${
+                  mpfEnabled ? "text-green-800" : "text-[#1e557a]"
+                }`}
+              >
                 <table className="table-auto border-collapse border border-black text-sm w-full">
                   <tbody>
                     {/* Row 1 */}
@@ -1947,7 +2013,7 @@ const PickList = () => {
               <Table
                 columns={columns}
                 data={pickList}
-                tableHeading="picklist_th"
+                tableHeading={`picklist_th ${mpfEnabled ? "mpf_enabled" : ""}`}
                 rowClassName={(row, i) =>
                   row.isGrayRow ? "!bg-[#e5e5e5]" : ""
                 }

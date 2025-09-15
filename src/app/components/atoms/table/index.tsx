@@ -16,6 +16,7 @@ interface TableProps {
   rowClassName?: (row: any, index: number) => string;
   tableHeading?: string;
   className?: string;
+  header_color?: string;
 }
 
 const Table: React.FC<TableProps> = ({
@@ -24,6 +25,7 @@ const Table: React.FC<TableProps> = ({
   rowClassName,
   tableHeading,
   className,
+  header_color,
 }): JSX.Element => {
   return (
     <div className="overflow-x-auto">
@@ -38,7 +40,7 @@ const Table: React.FC<TableProps> = ({
                 return (
                   <th
                     key={i}
-                    className={`min-w-[100px]  border border-black py-2 sm:py-3 px-2 text-xs sm:text-sm md:text-base bg-[#113d5a] text-white  ${tableHeading} ${
+                    className={`min-w-[100px]  border border-black py-2 sm:py-3 px-2 text-xs sm:text-sm md:text-base bg-[#113d5a] ${header_color} text-white ${tableHeading} ${
                       ele.headerClasses || ""
                     }`}
                   >
