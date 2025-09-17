@@ -4,7 +4,7 @@ import FormInput from "../components/form/forminpt";
 import LogoutButton from "@/app/components/LogoutButton";
 import { DataGrid, GridColDef, GridSortModel } from "@mui/x-data-grid";
 import { BeatLoader } from "react-spinners";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 import {
   searchInventory,
@@ -14,8 +14,11 @@ import {
 
 const InventorySearchPage = () => {
   const [inventorySearch, setInventorySearch] = useState<string>("");
+  const [originalSearchTerm, setOriginalSearchTerm] = useState<string>("");
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
+  const [isUrlSearch, setIsUrlSearch] = useState<boolean>(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Redux hooks
   const dispatch = useAppDispatch();
@@ -35,17 +38,37 @@ const InventorySearchPage = () => {
     }
   };
 
-  const performSearch = async () => {
-    if (!inventorySearch.trim()) {
+  const performSearch = async (searchTerm?: string) => {
+    const searchValue = searchTerm || inventorySearch.trim();
+    if (!searchValue) {
       return;
     }
 
     // Clear any previous errors
     dispatch(clearError());
 
+    // Update URL with search parameter
+    const url = new URL(window.location.href);
+    url.searchParams.set("partNumber", searchValue);
+    router.replace(url.pathname + url.search, { scroll: false });
+
+    // Set original search term for display
+    setOriginalSearchTerm(searchValue);
+
     // Dispatch the search action
-    dispatch(searchInventory({ partNumber: inventorySearch.trim() }));
+    dispatch(searchInventory({ partNumber: searchValue }));
   };
+
+  // Handle URL query parameters on component mount
+  useEffect(() => {
+    const partNumber = searchParams.get("partNumber");
+    if (partNumber) {
+      setInventorySearch(partNumber);
+      setOriginalSearchTerm(partNumber);
+      setIsUrlSearch(true);
+      performSearch(partNumber);
+    }
+  }, [searchParams]);
 
   // Handle Redux state changes
   useEffect(() => {
@@ -76,6 +99,7 @@ const InventorySearchPage = () => {
             qtyToPick: mpfEntry.qtyToPick,
             comments: mpfEntry.comments,
             requestedBy: mpfEntry.requestedBy,
+            unitPrice: mpfEntry.mpfPrice,
             date: new Date(mpfEntry.requestedOn).toLocaleDateString(),
           });
         });
@@ -185,44 +209,45 @@ const InventorySearchPage = () => {
         </div>
       ),
     },
+
+    {
+      field: "unitPrice",
+      headerName: "Price",
+      flex: 1,
+      sortable: true,
+      headerAlign: "center",
+      align: "center",
+      minWidth: 100,
+      renderCell: (params) => {
+        return (
+          <div className="text-center text-sm font-medium">
+            {params.value || "-"}
+          </div>
+        );
+      },
+    },
   ];
 
   return (
     <div>
-      {/* Menu Options */}
-      {/* <div className="p-4 border-b border-b-[#dee2e6]">
-        <div className="flex justify-center">
-          <button
-            onClick={() => router.push("/")}
-            className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 font-medium mr-4"
-          >
-            Back to Dashboard
-          </button>
-          <button
-            onClick={() => router.push("/inventory-search")}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium"
-          >
-            Inventory Search
-          </button>
-        </div>
-      </div> */}
-
-      {/* Search Form */}
-      <div className="p-2 pt-5.5 flex justify-center items-center">
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full max-w-lg">
-          <div className="w-full">
-            <FormInput
-              type="text"
-              label="Inventory Search"
-              labelCls="pr-0 sm:pr-5"
-              value={inventorySearch}
-              onChange={handleInventorySearchChange}
-              onKeyDown={handleKeyDown}
-              className="w-full"
-            />
+      {/* Search Form - Hide when search is performed via URL */}
+      {true && (
+        <div className="p-2 pt-5.5 flex justify-center items-center">
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full max-w-lg">
+            <div className="w-full">
+              <FormInput
+                type="text"
+                label="Inventory Search"
+                labelCls="pr-0 sm:pr-5"
+                value={inventorySearch}
+                onChange={handleInventorySearchChange}
+                onKeyDown={handleKeyDown}
+                className="w-full"
+              />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Search Results Area */}
       <div className="p-4">
@@ -239,13 +264,31 @@ const InventorySearchPage = () => {
             {searchResults?.data?.allSops &&
             searchResults.data.allSops.length > 0 ? (
               <div>
-                <div className="mb-4 text-center">
-                  {/* <p className="text-sm text-gray-600">
-                    TDGPN:{" "}
-                    <span className="font-semibold">
-                      {searchResults.data.TDGPN}
+                <div className="flex flex-col sm:flex-row justify-between items-center mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg gap-2 sm:gap-0">
+                  <div className="flex-1 w-full sm:w-auto">
+                    {/* <FormInput
+                      type="text"
+                      label="New Search"
+                      labelCls="pr-0 sm:pr-5"
+                      value={inventorySearch}
+                      onChange={handleInventorySearchChange}
+                      onKeyDown={handleKeyDown}
+                      className="w-full"
+                    /> */}
+                  </div>
+                  <div className="flex-1 w-full sm:w-auto text-center mb-2 sm:mb-0">
+                    <span className="text-base sm:text-lg font-semibold text-gray-800">
+                      TDGPN: {originalSearchTerm}
                     </span>
-                  </p> */}
+                  </div>
+                  <div className="flex-1 w-full sm:w-auto text-right">
+                    <span className="text-base sm:text-lg font-semibold text-gray-800 border border-gray-200 rounded-md p-2 bg-[#ffff]">
+                      Price:{" "}
+                      {searchResults.data.allSops[
+                        searchResults.data.allSops.length - 1
+                      ]?.unitPrice || "N/A"}
+                    </span>
+                  </div>
                 </div>
                 <div style={{ height: 400, width: "100%" }}>
                   <DataGrid
@@ -266,12 +309,12 @@ const InventorySearchPage = () => {
                     }}
                     sx={{
                       border: "1px solid #000000",
-                      borderRadius: "8px",
+                      borderRadius: "0px",
                       overflow: "hidden",
                       fontFamily:
                         "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
                       "& .MuiDataGrid-columnHeaders": {
-                        backgroundColor: "#113d5a !important",
+                        backgroundColor: "#39495f !important",
                         color: "white",
                         fontSize: "14px",
                         fontWeight: "600",
@@ -285,7 +328,7 @@ const InventorySearchPage = () => {
                         },
                       },
                       "& .MuiDataGrid-columnHeader": {
-                        backgroundColor: "#113d5a !important",
+                        backgroundColor: "#39495f !important",
                         borderRight: "1px solid #000000",
                         "&:last-child": {
                           borderRight: "none",
@@ -317,7 +360,7 @@ const InventorySearchPage = () => {
                       "& .MuiDataGrid-row": {
                         backgroundColor: "white",
                         "&:nth-of-type(even)": {
-                          backgroundColor: "#fafafa",
+                          backgroundColor: "",
                         },
                         "&:hover": {
                           backgroundColor: "#f0f8ff",

@@ -28,6 +28,13 @@ interface FormInputProps {
   inputClass?: string;
 }
 
+const hideNumberArrowsStyle: React.CSSProperties = {
+  // Chrome, Safari, Edge, Opera
+  appearance: "textfield",
+  MozAppearance: "textfield",
+  WebkitAppearance: "none",
+};
+
 const FormInput: React.FC<FormInputProps> = ({
   type,
   id,
@@ -58,6 +65,16 @@ const FormInput: React.FC<FormInputProps> = ({
     }
   };
 
+  // Hide number input arrows for type="number"
+  const numberInputStyle =
+    type === "number"
+      ? {
+          ...hideNumberArrowsStyle,
+          // Hide arrows for Firefox
+          MozAppearance: "textfield",
+        }
+      : {};
+
   return (
     <div
       className={`w-full ${
@@ -85,7 +102,28 @@ const FormInput: React.FC<FormInputProps> = ({
         disabled={disabled}
         required={required}
         readOnly={readonly}
+        style={numberInputStyle}
+        // Hide arrows for Chrome, Safari, Edge, Opera
+        {...(type === "number"
+          ? {
+              inputMode: "decimal",
+              pattern: "[0-9]*",
+              // The following are for hiding arrows in Chrome/Edge/Safari
+              // but since React doesn't support pseudo-elements, we use style above
+            }
+          : {})}
       />
+      {/* Hide number input arrows for Chrome, Safari, Edge, Opera */}
+      <style jsx>{`
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        input[type="number"] {
+          -moz-appearance: textfield;
+        }
+      `}</style>
     </div>
   );
 };

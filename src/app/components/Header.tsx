@@ -7,9 +7,14 @@ const Header = () => {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Hide header on login page
+  if (pathname === "/login") {
+    return null;
+  }
+
   const navigationLinks = [
     // First Row
-    { name: "SOP Search", path: "/" },
+    { name: "SOP Search", path: "/sop-search" },
     { name: "Inventory Search", path: "/inventory-search" },
     { name: "Admin Search", path: "/admin-search" },
   ];

@@ -79,6 +79,7 @@ const PickList = () => {
   const [loading, setLoading] = useState(false);
   const [blankLoading, setblankLoading] = useState(false);
   const [itemLoading, setitemLoading] = useState(false);
+  const [fixtureLoading, setFixtureLoading] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [mpfEnabled, setMpfEnabled] = useState(false);
   const [mpfRequestedBy, setMpfRequestedBy] = useState<string>("");
@@ -91,11 +92,13 @@ const PickList = () => {
     mpfQty: boolean;
     comments: boolean;
     mpfRequestedBy: boolean;
+    qtyLimit: boolean;
   }>({
     actualQty: false,
     mpfQty: false,
     comments: false,
     mpfRequestedBy: false,
+    qtyLimit: false,
   });
 
   // const [productionDateOut, setProductionDateOut] = useState<string>("");
@@ -157,11 +160,15 @@ const PickList = () => {
   ]);
 
   const GetFixtureData = async (fixtureNum: string) => {
+    setFixtureLoading(true);
     try {
       const response = await GetFixtureDetails(fixtureNum);
       setFixtureData(response.data.data);
     } catch (err) {
       // console.error("Error fetching fixture details:", err)
+      setFixtureData(null);
+    } finally {
+      setFixtureLoading(false);
     }
   };
 
@@ -443,46 +450,59 @@ const PickList = () => {
     const filteredData = pickList?.filter((item: any) => item.isGray === true);
     try {
       if (filteredData.length > 0) {
-        // Ensure default quantities and comments are included in the data sent to API
-        const processedSheetData = filteredData.map((item: any) => {
-          // First sanitize null/undefined values
-          let processedItem = sanitizeSheetDataItem(item);
-
-          // Handle quantity logic: if mpfQty has value, clear ActualQtyPicked
-          if (item.mpfQty && item.mpfQty.trim() !== "" && item.mpfQty !== "0") {
-            // If MPF quantity exists, clear ActualQtyPicked
-            processedItem.ActualQtyPicked = "";
-          } else {
-            // If no MPF quantity, handle ActualQtyPicked normally
-            if (!item.userModifiedActualQty) {
-              const defaultQty = getDefaultQtyToPick(item.TDGPN);
-              processedItem.ActualQtyPicked =
-                defaultQty || item.ActualQtyPicked || "";
+        // Filter and process data based on MPF mode
+        const processedSheetData = filteredData
+          .filter((item: any) => {
+            if (mpfEnabled) {
+              // When MPF is enabled, include items with MPF quantities
+              return (
+                item.mpfQty && item.mpfQty.trim() !== "" && item.mpfQty !== "0"
+              );
+            } else {
+              // When MPF is disabled, include items with user-modified ActualQtyPicked
+              return (
+                item.userModifiedActualQty &&
+                item.ActualQtyPicked &&
+                item.ActualQtyPicked !== "" &&
+                item.ActualQtyPicked !== "0"
+              );
             }
-          }
+          })
+          .map((item: any) => {
+            // First sanitize null/undefined values
+            let processedItem = sanitizeSheetDataItem(item);
 
-          // Get user comments if they exist
-          const userComments =
-            item.InventoryComments && item.InventoryComments.trim() !== ""
-              ? item.InventoryComments
-              : "";
+            if (mpfEnabled) {
+              // In MPF mode, clear ActualQtyPicked and keep MPF quantity
+              processedItem.ActualQtyPicked = "";
+              processedItem.mpfQty = item.mpfQty || "";
+            } else {
+              // In normal mode, keep user's ActualQtyPicked value
+              processedItem.ActualQtyPicked = item.ActualQtyPicked || "";
+            }
 
-          // Get default comments
-          const defaultComments = getDefaultComments(item.TDGPN);
+            // Get user comments if they exist
+            const userComments =
+              item.InventoryComments && item.InventoryComments.trim() !== ""
+                ? item.InventoryComments
+                : "";
 
-          // Combine user and default comments
-          let combinedComments = "";
-          if (userComments) {
-            combinedComments = userComments;
-          } else {
-            combinedComments = defaultComments || "";
-          }
+            // Get default comments
+            const defaultComments = getDefaultComments(item.TDGPN);
 
-          // Add the combined comments to the item
-          processedItem.InventoryComments = combinedComments;
+            // Combine user and default comments
+            let combinedComments = "";
+            if (userComments) {
+              combinedComments = userComments;
+            } else {
+              combinedComments = defaultComments || "";
+            }
 
-          return processedItem;
-        });
+            // Add the combined comments to the item
+            processedItem.InventoryComments = combinedComments;
+
+            return processedItem;
+          });
 
         const payload = {
           excelFixtureDetail: {
@@ -517,6 +537,7 @@ const PickList = () => {
       mpfQty: false,
       comments: false,
       mpfRequestedBy: false,
+      qtyLimit: false,
     });
 
     if (!pickList || pickList.length === 0) {
@@ -564,6 +585,24 @@ const PickList = () => {
       setValidationErrors((prev) => ({ ...prev, actualQty: true }));
       toastUtils.error(
         "Actual Qty To Be Picked cannot be greater than Total Qty Needed"
+      );
+      return false;
+    }
+
+    // Check if user entered quantity is less than or equal to the default/previous value
+    const invalidLimitRows = nonGrayRows.filter((item: any) => {
+      if (!item.userModifiedActualQty) return false; // Only check user-modified items
+
+      const userQty = parseFloat(item.ActualQtyPicked) || 0;
+      const defaultQty = parseFloat(getDefaultQtyToPick(item.TDGPN)) || 0;
+
+      return userQty <= defaultQty && defaultQty > 0;
+    });
+
+    if (invalidLimitRows.length > 0) {
+      setValidationErrors((prev) => ({ ...prev, qtyLimit: true }));
+      toastUtils.error(
+        "You must enter a quantity greater than the default value. Please check the highlighted fields."
       );
       return false;
     }
@@ -651,6 +690,10 @@ const PickList = () => {
     setValidationErrors((prev) => ({ ...prev, mpfRequestedBy: false }));
   };
 
+  const clearQtyLimitError = () => {
+    setValidationErrors((prev) => ({ ...prev, qtyLimit: false }));
+  };
+
   const handleSubmit = async () => {
     // Validate before proceeding
     if (!validateInventoryPickList()) {
@@ -699,46 +742,59 @@ const PickList = () => {
       const rowsToDownload = hasPickedRows ? filteredData : fallbackData;
 
       if (rowsToDownload.length > 0) {
-        // Ensure default quantities and comments are included in the data sent to API
-        const processedSheetData = rowsToDownload.map((item: any) => {
-          // First sanitize null/undefined values
-          let processedItem = sanitizeSheetDataItem(item);
-
-          // Handle quantity logic: if mpfQty has value, clear ActualQtyPicked
-          if (item.mpfQty && item.mpfQty.trim() !== "" && item.mpfQty !== "0") {
-            // If MPF quantity exists, clear ActualQtyPicked
-            processedItem.ActualQtyPicked = "";
-          } else {
-            // If no MPF quantity, handle ActualQtyPicked normally
-            if (!item.userModifiedActualQty) {
-              const defaultQty = getDefaultQtyToPick(item.TDGPN);
-              processedItem.ActualQtyPicked =
-                defaultQty || item.ActualQtyPicked || "";
+        // Filter and process data based on MPF mode
+        const processedSheetData = rowsToDownload
+          .filter((item: any) => {
+            if (mpfEnabled) {
+              // When MPF is enabled, include items with MPF quantities
+              return (
+                item.mpfQty && item.mpfQty.trim() !== "" && item.mpfQty !== "0"
+              );
+            } else {
+              // When MPF is disabled, include items with user-modified ActualQtyPicked
+              return (
+                item.userModifiedActualQty &&
+                item.ActualQtyPicked &&
+                item.ActualQtyPicked !== "" &&
+                item.ActualQtyPicked !== "0"
+              );
             }
-          }
+          })
+          .map((item: any) => {
+            // First sanitize null/undefined values
+            let processedItem = sanitizeSheetDataItem(item);
 
-          // Get user comments if they exist
-          const userComments =
-            item.InventoryComments && item.InventoryComments.trim() !== ""
-              ? item.InventoryComments
-              : "";
+            if (mpfEnabled) {
+              // In MPF mode, clear ActualQtyPicked and keep MPF quantity
+              processedItem.ActualQtyPicked = "";
+              processedItem.mpfQty = item.mpfQty || "";
+            } else {
+              // In normal mode, keep user's ActualQtyPicked value
+              processedItem.ActualQtyPicked = item.ActualQtyPicked || "";
+            }
 
-          // Get default comments
-          const defaultComments = getDefaultComments(item.TDGPN);
+            // Get user comments if they exist
+            const userComments =
+              item.InventoryComments && item.InventoryComments.trim() !== ""
+                ? item.InventoryComments
+                : "";
 
-          // Combine user and default comments
-          let combinedComments = "";
-          if (userComments) {
-            combinedComments = userComments;
-          } else {
-            combinedComments = defaultComments || "";
-          }
+            // Get default comments
+            const defaultComments = getDefaultComments(item.TDGPN);
 
-          // Add the combined comments to the item
-          processedItem.InventoryComments = combinedComments;
+            // Combine user and default comments
+            let combinedComments = "";
+            if (userComments) {
+              combinedComments = userComments;
+            } else {
+              combinedComments = defaultComments || "";
+            }
 
-          return processedItem;
-        });
+            // Add the combined comments to the item
+            processedItem.InventoryComments = combinedComments;
+
+            return processedItem;
+          });
 
         const payload = {
           excelFixtureDetail: {
@@ -1098,8 +1154,17 @@ const PickList = () => {
           const actualQty = parseFloat(currentValue) || 0;
           const totalQty = parseFloat(row.TotalQtyNeeded) || 0;
           const hasInvalidQty = actualQty > totalQty && actualQty > 0;
+
+          // Check if this row has quantity limit error (user qty <= default qty)
+          const defaultQty = parseFloat(getDefaultQtyToPick(row.TDGPN)) || 0;
+          const hasQtyLimitError =
+            row.userModifiedActualQty &&
+            actualQty <= defaultQty &&
+            defaultQty > 0;
+
           const shouldShowRedBorder =
-            validationErrors.actualQty && hasInvalidQty;
+            (validationErrors.actualQty && hasInvalidQty) ||
+            (validationErrors.qtyLimit && hasQtyLimitError);
 
           // When MPF is enabled, show only the number (not input field)
           if (mpfEnabled) {
@@ -1123,6 +1188,7 @@ const PickList = () => {
                 onChange={async (e) => {
                   const val = e.target.value;
                   clearActualQtyError(); // Clear validation error when user types
+                  clearQtyLimitError(); // Clear quantity limit error when user types
                   setPickList((prev: any[]) =>
                     prev.map((item, i) =>
                       i === index
@@ -2102,11 +2168,18 @@ const PickList = () => {
         </>
       ) : (
         <div className="pt-3 text-center text-gray-500">
-          {!fixtureNumber
-            ? "Please select a fixture number"
-            : !selectedsopId
-            ? "Please select a SOP"
-            : "NO DATA FOUND"}
+          {fixtureLoading ? (
+            <div className="flex items-center justify-center">
+              <BeatLoader />
+              {/* <span className="ml-2">Loading fixture details...</span> */}
+            </div>
+          ) : !fixtureNumber ? (
+            "Please select a fixture number"
+          ) : !selectedsopId ? (
+            "Please select a SOP"
+          ) : (
+            "NO DATA FOUND"
+          )}
         </div>
       )}
     </div>
